@@ -899,7 +899,7 @@ with publish_tab:
 
 with manage_tab:
     st.markdown("### Published Pages")
-    st.caption("Only the original creator can access the repo, replace HTML, or delete a page.")
+    st.caption("Live pages are open to all approved users. Repo, Replace and Delete are creator-only.")
 
     try:
         token = get_github_token()
@@ -911,85 +911,137 @@ with manage_tab:
             records = [published_page_record(repo) for repo in repos]
 
             # ------------------------------------------------------------
-            # Compact action table
+            # Compact native Streamlit table
             # ------------------------------------------------------------
-            rows = []
-            render_nonce = str(int(time.time() * 1000))
 
-            for idx, record in enumerate(records):
-                repo_q = quote(record["repo_name"], safe="")
-                base_nonce = f"{render_nonce}-{idx}"
+            # Tighten button/row spacing for the table-like layout.
+            st.markdown(
+                """
+                <style>
+                  .compact-table-head {
+                    font-size: .78rem;
+                    font-weight: 600;
+                    opacity: .72;
+                    padding: 0 2px 5px 2px;
+                  }
 
-                rows.append(
-                    "<tr>"
-                    f'<td class="c-page">{escape(record["page"])}</td>'
-                    f'<td class="c-brand">{escape(record["brand"])}</td>'
-                    f'<td class="c-by">{escape(record["creator_name"])}</td>'
-                    f'<td class="c-date">{escape(record["published"])}</td>'
-                    f'<td class="c-action"><a href="{escape(record["live_url"], quote=True)}" '
-                    'target="_blank" rel="noopener noreferrer">Open</a></td>'
-                    f'<td class="c-action"><a href="?action=repo&repo={repo_q}&nonce={base_nonce}-repo" '
-                    'target="_self">Repo</a></td>'
-                    f'<td class="c-action"><a href="?action=replace&repo={repo_q}&nonce={base_nonce}-replace" '
-                    'target="_self">Replace</a></td>'
-                    f'<td class="c-action danger"><a href="?action=delete&repo={repo_q}&nonce={base_nonce}-delete" '
-                    'target="_self">Delete</a></td>'
-                    "</tr>"
-                )
+                  .compact-cell {
+                    font-size: .83rem;
+                    line-height: 1.2;
+                    padding-top: .48rem;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                  }
 
-            table_html = (
-                '<style>'
-                '.pub-wrap{width:100%;overflow-x:hidden;border:1px solid rgba(128,128,128,.22);'
-                'margin:10px 0 16px 0;}'
-                '.pub-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;}'
-                '.pub-table th{font-weight:600;text-align:left;padding:8px 9px;'
-                'background:rgba(128,128,128,.06);border-bottom:1px solid rgba(128,128,128,.22);'
-                'white-space:nowrap;}'
-                '.pub-table td{padding:8px 9px;border-bottom:1px solid rgba(128,128,128,.14);'
-                'vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
-                '.pub-table tr:last-child td{border-bottom:0;}'
-                '.pub-table .c-page{width:24%;font-weight:600;}'
-                '.pub-table .c-brand{width:18%;}'
-                '.pub-table .c-by{width:10%;}'
-                '.pub-table .c-date{width:12%;}'
-                '.pub-table .c-action{width:9%;text-align:center;}'
-                '.pub-table a{text-decoration:none;font-weight:600;}'
-                '.pub-table .danger a{color:#b42318;}'
-                '@media (max-width:900px){'
-                '.pub-table{font-size:12px;}'
-                '.pub-table th,.pub-table td{padding:7px 6px;}'
-                '.pub-table .c-page{width:23%;}'
-                '.pub-table .c-brand{width:17%;}'
-                '.pub-table .c-by{width:10%;}'
-                '.pub-table .c-date{width:12%;}'
-                '.pub-table .c-action{width:9.5%;}'
-                '}'
-                '</style>'
-                '<div class="pub-wrap">'
-                '<table class="pub-table">'
-                '<thead><tr>'
-                '<th class="c-page">Page</th>'
-                '<th class="c-brand">Brand</th>'
-                '<th class="c-by">By</th>'
-                '<th class="c-date">Published</th>'
-                '<th class="c-action">Live</th>'
-                '<th class="c-action">Repo</th>'
-                '<th class="c-action">Replace</th>'
-                '<th class="c-action">Delete</th>'
-                '</tr></thead>'
-                '<tbody>'
-                + "".join(rows)
-                + '</tbody></table></div>'
+                  div[data-testid="stHorizontalBlock"] {
+                    gap: .35rem;
+                  }
+
+                  div[data-testid="stButton"] > button,
+                  div[data-testid="stLinkButton"] > a {
+                    min-height: 2rem;
+                    padding: .28rem .45rem;
+                    font-size: .78rem;
+                  }
+                </style>
+                """,
+                unsafe_allow_html=True,
             )
 
-            st.markdown(table_html, unsafe_allow_html=True)
+            widths = [2.25, 1.6, .9, 1.08, .72, .72, .82, .72]
+
+            header = st.columns(widths)
+            for col, label in zip(
+                header,
+                ["Page", "Brand", "By", "Published", "Live", "Repo", "Replace", "Delete"],
+            ):
+                with col:
+                    st.markdown(
+                        f'<div class="compact-table-head">{label}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            st.divider()
+
+            for idx, record in enumerate(records):
+                row = st.columns(widths)
+
+                with row[0]:
+                    st.markdown(
+                        f'<div class="compact-cell"><strong>{escape(record["page"])}</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                with row[1]:
+                    st.markdown(
+                        f'<div class="compact-cell">{escape(record["brand"])}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                with row[2]:
+                    st.markdown(
+                        f'<div class="compact-cell">{escape(record["creator_name"])}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                with row[3]:
+                    st.markdown(
+                        f'<div class="compact-cell">{escape(record["published"])}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                with row[4]:
+                    st.link_button(
+                        "Open",
+                        record["live_url"],
+                        use_container_width=True,
+                    )
+
+                with row[5]:
+                    if st.button(
+                        "Repo",
+                        key=f"repo_btn_{record['repo_name']}_{idx}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["pending_manage_action"] = "repo"
+                        st.session_state["pending_manage_repo"] = record["repo_name"]
+                        st.session_state.pop("manage_reauthed", None)
+                        st.rerun()
+
+                with row[6]:
+                    if st.button(
+                        "Replace",
+                        key=f"replace_btn_{record['repo_name']}_{idx}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["pending_manage_action"] = "replace"
+                        st.session_state["pending_manage_repo"] = record["repo_name"]
+                        st.session_state.pop("manage_reauthed", None)
+                        st.rerun()
+
+                with row[7]:
+                    if st.button(
+                        "Delete",
+                        key=f"delete_btn_{record['repo_name']}_{idx}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["pending_manage_action"] = "delete"
+                        st.session_state["pending_manage_repo"] = record["repo_name"]
+                        st.session_state.pop("manage_reauthed", None)
+                        st.rerun()
+
+                st.markdown(
+                    '<div style="height:1px;background:rgba(128,128,128,.12);margin:.15rem 0 .25rem 0;"></div>',
+                    unsafe_allow_html=True,
+                )
 
             # ------------------------------------------------------------
-            # Owner-only action panel
+            # Creator-only action panel
             # ------------------------------------------------------------
-            action = st.query_params.get("action", "")
-            selected_repo_name = st.query_params.get("repo", "")
-            action_nonce = st.query_params.get("nonce", "")
+
+            action = st.session_state.get("pending_manage_action")
+            selected_repo_name = st.session_state.get("pending_manage_repo")
 
             selected_record = next(
                 (
@@ -1001,14 +1053,12 @@ with manage_tab:
             )
 
             if action in {"repo", "replace", "delete"} and selected_record:
-                st.divider()
-
                 creator_email = (
                     selected_record.get("creator_email") or ""
                 ).strip().lower()
 
-                # Fallback for older publisher-created repos where the email
-                # may not have been written into the repository description.
+                # Older publisher-created repos may not include creator email.
+                # Resolve it by unique first-name match when possible.
                 if not creator_email:
                     matching_emails = [
                         email
@@ -1020,9 +1070,11 @@ with manage_tab:
                         creator_email = matching_emails[0]
 
                 is_owner = (
-                    creator_email
+                    bool(creator_email)
                     and AUTHENTICATED_EMAIL == creator_email
                 )
+
+                st.divider()
 
                 if not is_owner:
                     creator_name = selected_record["creator_name"] or "the original creator"
@@ -1033,24 +1085,13 @@ with manage_tab:
                     )
 
                     if st.button(
-                        "Sign out",
+                        "Close",
                         use_container_width=True,
-                        key=f"owner_signout_{selected_repo_name}_{action}",
+                        key="close_not_owner",
                     ):
-                        st.query_params.clear()
-
-                        for key in list(st.session_state.keys()):
-                            if (
-                                key.startswith("_gh_")
-                                or key.startswith("_reauth_")
-                                or key in {
-                                    "authenticated_email",
-                                    "authenticated_name",
-                                    "repo_cache",
-                                }
-                            ):
-                                st.session_state.pop(key, None)
-
+                        st.session_state.pop("pending_manage_action", None)
+                        st.session_state.pop("pending_manage_repo", None)
+                        st.session_state.pop("manage_reauthed", None)
                         st.rerun()
 
                 else:
@@ -1069,31 +1110,25 @@ with manage_tab:
                         f"{selected_record['published']}"
                     )
 
-                    # The nonce makes every new click a fresh re-authentication request.
-                    reauth_key = (
-                        f"_reauth_{AUTHENTICATED_EMAIL}_"
-                        f"{selected_repo_name}_{action}_{action_nonce}"
-                    )
-
-                    if not st.session_state.get(reauth_key):
-                        st.caption("Confirm your identity to continue.")
-
+                    # Require fresh creator passcode for every action click.
+                    if not st.session_state.get("manage_reauthed"):
                         with st.form(
-                            f"reauth_form_{selected_repo_name}_{action}_{action_nonce}"
+                            f"manage_reauth_{selected_repo_name}_{action}",
+                            clear_on_submit=True,
                         ):
                             passcode = st.text_input(
-                                "Passcode",
+                                "Re-enter your passcode",
                                 type="password",
                             )
 
-                            confirm_identity = st.form_submit_button(
+                            confirm = st.form_submit_button(
                                 "Continue",
                                 type="primary",
                                 use_container_width=True,
                             )
 
-                        if confirm_identity:
-                            expected_passcode = str(
+                        if confirm:
+                            expected = str(
                                 USERS[AUTHENTICATED_EMAIL]["passcode"]
                             )
 
@@ -1101,10 +1136,10 @@ with manage_tab:
                                 passcode
                                 and hmac.compare_digest(
                                     str(passcode),
-                                    expected_passcode,
+                                    expected,
                                 )
                             ):
-                                st.session_state[reauth_key] = True
+                                st.session_state["manage_reauthed"] = True
                                 st.rerun()
                             else:
                                 st.error("Incorrect passcode.")
@@ -1126,10 +1161,11 @@ with manage_tab:
                             if st.button(
                                 "Done",
                                 use_container_width=True,
-                                key=f"done_repo_{action_nonce}",
+                                key="done_repo_action",
                             ):
-                                st.session_state.pop(reauth_key, None)
-                                st.query_params.clear()
+                                st.session_state.pop("pending_manage_action", None)
+                                st.session_state.pop("pending_manage_repo", None)
+                                st.session_state.pop("manage_reauthed", None)
                                 st.rerun()
 
                         elif action == "replace":
@@ -1137,7 +1173,7 @@ with manage_tab:
                                 "New HTML",
                                 height=300,
                                 placeholder="Paste the complete replacement HTML here.",
-                                key=f"replacement_{selected_repo_name}_{action_nonce}",
+                                key=f"replacement_{selected_repo_name}",
                             )
 
                             update_col, cancel_col = st.columns(2)
@@ -1148,7 +1184,7 @@ with manage_tab:
                                     type="primary",
                                     use_container_width=True,
                                     disabled=not bool(replacement_html.strip()),
-                                    key=f"update_{selected_repo_name}_{action_nonce}",
+                                    key="confirm_replace_action",
                                 ):
                                     branch = (
                                         selected.get("default_branch")
@@ -1164,8 +1200,9 @@ with manage_tab:
                                         f"Update HTML by {AUTHENTICATED_NAME}",
                                     )
 
-                                    st.session_state.pop(reauth_key, None)
-                                    st.query_params.clear()
+                                    st.session_state.pop("pending_manage_action", None)
+                                    st.session_state.pop("pending_manage_repo", None)
+                                    st.session_state.pop("manage_reauthed", None)
                                     st.success("Page updated.")
                                     st.rerun()
 
@@ -1173,10 +1210,11 @@ with manage_tab:
                                 if st.button(
                                     "Cancel",
                                     use_container_width=True,
-                                    key=f"cancel_replace_{action_nonce}",
+                                    key="cancel_replace_action",
                                 ):
-                                    st.session_state.pop(reauth_key, None)
-                                    st.query_params.clear()
+                                    st.session_state.pop("pending_manage_action", None)
+                                    st.session_state.pop("pending_manage_repo", None)
+                                    st.session_state.pop("manage_reauthed", None)
                                     st.rerun()
 
                         elif action == "delete":
@@ -1191,11 +1229,14 @@ with manage_tab:
                                     "Delete permanently",
                                     type="primary",
                                     use_container_width=True,
-                                    key=f"delete_{selected_repo_name}_{action_nonce}",
+                                    key="confirm_delete_action",
                                 ):
                                     delete_repo(token, selected_repo_name)
-                                    st.session_state.pop(reauth_key, None)
-                                    st.query_params.clear()
+
+                                    st.session_state.pop("pending_manage_action", None)
+                                    st.session_state.pop("pending_manage_repo", None)
+                                    st.session_state.pop("manage_reauthed", None)
+
                                     st.success("Page deleted.")
                                     st.rerun()
 
@@ -1203,10 +1244,11 @@ with manage_tab:
                                 if st.button(
                                     "Cancel",
                                     use_container_width=True,
-                                    key=f"cancel_delete_{action_nonce}",
+                                    key="cancel_delete_action",
                                 ):
-                                    st.session_state.pop(reauth_key, None)
-                                    st.query_params.clear()
+                                    st.session_state.pop("pending_manage_action", None)
+                                    st.session_state.pop("pending_manage_repo", None)
+                                    st.session_state.pop("manage_reauthed", None)
                                     st.rerun()
 
     except Exception as exc:

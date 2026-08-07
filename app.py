@@ -487,6 +487,190 @@ def delete_repo(token: str, repo_name: str):
     )
 
 
+
+# ============================================================
+# PUBLISHED PAGE METADATA HELPERS
+# ============================================================
+
+def infer_brand_from_repo_name(repo_name: str) -> str:
+    for brand_name, brand_slug in BRANDS.items():
+        if repo_name.startswith(f"{brand_slug}-"):
+            return brand_name
+    return "Unknown"
+
+
+def parse_publisher_description(description: str):
+    """
+    Expected description:
+    BC Branded HTML Publisher | Action Network |
+    Published by Gautham (gmarthandan@bettercollective.com)
+    """
+    description = description or ""
+
+    pattern = (
+        rf"^{re.escape(PUBLISHER_MARKER)}\s*\|\s*"
+        r"(?P<brand>.*?)\s*\|\s*Published by\s+"
+        r"(?P<name>.*?)\s+\((?P<email>[^)]+)\)\s*$"
+    )
+
+    match = re.match(pattern, description)
+
+    if not match:
+        return {
+            "brand": "",
+            "creator_name": "Unknown",
+            "creator_email": "",
+        }
+
+    return {
+        "brand": match.group("brand").strip(),
+        "creator_name": match.group("name").strip(),
+        "creator_email": match.group("email").strip().lower(),
+    }
+
+
+def page_title_from_repo(repo_name: str, brand_name: str) -> str:
+    brand_slug = BRANDS.get(brand_name)
+
+    if not brand_slug:
+        # Fall back to whichever known brand slug matches the repo.
+        for known_brand, known_slug in BRANDS.items():
+            if repo_name.startswith(f"{known_slug}-"):
+                brand_slug = known_slug
+                break
+
+    value = repo_name
+
+    if brand_slug and value.startswith(f"{brand_slug}-"):
+        value = value[len(brand_slug) + 1:]
+
+    # Remove DDMMYYHHMM timestamp and optional collision suffix.
+    value = re.sub(r"-\d{10}(?:-\d+)?$", "", value)
+
+    return value.replace("-", " ").strip().title() or repo_name
+
+
+def repo_created_display(repo: dict) -> str:
+    raw = repo.get("created_at")
+
+    if not raw:
+        return "Unknown"
+
+    try:
+        created = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        created_london = created.astimezone(LONDON_TZ)
+        return created_london.strftime("%d %b %Y")
+    except Exception:
+        return raw
+
+
+def published_page_record(repo: dict) -> dict:
+    metadata = parse_publisher_description(repo.get("description") or "")
+
+    brand = metadata["brand"] or infer_brand_from_repo_name(repo["name"])
+    creator_name = metadata["creator_name"]
+    creator_email = metadata["creator_email"]
+
+    return {
+        "repo": repo,
+        "repo_name": repo["name"],
+        "page": page_title_from_repo(repo["name"], brand),
+        "brand": brand,
+        "creator_name": creator_name,
+        "creator_email": creator_email,
+        "published": repo_created_display(repo),
+        "repo_url": repo["html_url"],
+        "live_url": (
+            f"https://{PUBLISH_OWNER.lower()}.github.io/"
+            f"{repo['name']}/"
+        ),
+    }
+
+
+def render_published_pages_table(records):
+    rows = []
+
+    for record in records:
+        rows.append(
+            f"""
+            <tr>
+              <td class="page-name">{escape(record["page"])}</td>
+              <td>{escape(record["brand"])}</td>
+              <td>{escape(record["creator_name"])}</td>
+              <td>{escape(record["published"])}</td>
+              <td><a href="{escape(record["live_url"], quote=True)}" target="_blank" rel="noopener noreferrer">Open</a></td>
+              <td><a href="{escape(record["repo_url"], quote=True)}" target="_blank" rel="noopener noreferrer">GitHub</a></td>
+            </tr>
+            """
+        )
+
+    table_html = f"""
+    <style>
+      .published-table-wrap {{
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid rgba(128,128,128,.24);
+        margin: 10px 0 22px 0;
+      }}
+
+      table.published-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.94rem;
+      }}
+
+      .published-table th {{
+        text-align: left;
+        font-weight: 600;
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(128,128,128,.28);
+        background: rgba(128,128,128,.07);
+        white-space: nowrap;
+      }}
+
+      .published-table td {{
+        padding: 13px 14px;
+        border-bottom: 1px solid rgba(128,128,128,.16);
+        vertical-align: middle;
+      }}
+
+      .published-table tr:last-child td {{
+        border-bottom: 0;
+      }}
+
+      .published-table .page-name {{
+        font-weight: 600;
+        min-width: 220px;
+      }}
+
+      .published-table a {{
+        text-decoration: none;
+        font-weight: 600;
+      }}
+    </style>
+
+    <div class="published-table-wrap">
+      <table class="published-table">
+        <thead>
+          <tr>
+            <th>Page</th>
+            <th>Brand</th>
+            <th>Created By</th>
+            <th>Published</th>
+            <th>Live Page</th>
+            <th>Repository</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(rows)}
+        </tbody>
+      </table>
+    </div>
+    """
+
+    st.markdown(table_html, unsafe_allow_html=True)
+
+
 # ============================================================
 # HEADER
 # ============================================================
@@ -715,9 +899,16 @@ with publish_tab:
 
 with manage_tab:
     st.markdown("### Published Pages")
+    st.caption(
+        "All pages published through this tool are visible to approved team members."
+    )
 
-    if st.button("Refresh list"):
-        st.session_state.pop("repo_cache", None)
+    top_left, top_right = st.columns([1, 3])
+
+    with top_left:
+        if st.button("Refresh list", use_container_width=True):
+            st.session_state.pop("repo_cache", None)
+            st.rerun()
 
     try:
         token = get_github_token()
@@ -730,26 +921,73 @@ with manage_tab:
         if not repos:
             st.info("No repositories created by this publisher were found.")
         else:
-            repo_names = [repo["name"] for repo in repos]
-            selected_name = st.selectbox("Repository", repo_names)
-            selected = next(
-                repo for repo in repos
-                if repo["name"] == selected_name
+            records = [published_page_record(repo) for repo in repos]
+
+            scope = st.radio(
+                "View",
+                ["All Pages", "My Pages"],
+                horizontal=True,
+                label_visibility="collapsed",
             )
 
-            pages = get_pages(token, selected_name)
-            pages_url = (
-                pages.get("html_url")
-                if pages
-                else f"https://{PUBLISH_OWNER.lower()}.github.io/{selected_name}/"
+            if scope == "My Pages":
+                visible_records = [
+                    record
+                    for record in records
+                    if record["creator_email"] == AUTHENTICATED_EMAIL
+                ]
+            else:
+                visible_records = records
+
+            if not visible_records:
+                if scope == "My Pages":
+                    st.info("You have not published any pages yet.")
+                else:
+                    st.info("No published pages were found.")
+            else:
+                render_published_pages_table(visible_records)
+
+            st.markdown("### Manage a Page")
+            st.caption(
+                "Choose a page below only when you need to update its HTML or delete it."
             )
+
+            option_labels = {
+                (
+                    f'{record["page"]} · {record["brand"]} · '
+                    f'{record["creator_name"]} · {record["published"]}'
+                ): record
+                for record in records
+            }
+
+            selected_label = st.selectbox(
+                "Page",
+                list(option_labels.keys()),
+                label_visibility="collapsed",
+            )
+
+            selected_record = option_labels[selected_label]
+            selected = selected_record["repo"]
+            selected_name = selected_record["repo_name"]
+            pages_url = selected_record["live_url"]
+
+            info1, info2, info3 = st.columns([1, 1, 1])
+
+            with info1:
+                st.metric("Brand", selected_record["brand"])
+
+            with info2:
+                st.metric("Created By", selected_record["creator_name"])
+
+            with info3:
+                st.metric("Published", selected_record["published"])
 
             open1, open2 = st.columns(2)
 
             with open1:
                 st.link_button(
                     "Open repository",
-                    selected["html_url"],
+                    selected_record["repo_url"],
                     use_container_width=True,
                 )
 
@@ -808,7 +1046,10 @@ with manage_tab:
                     "Permanently delete repository",
                     type="primary",
                     use_container_width=True,
-                    disabled=not bool(admin_code and confirm_repo == selected_name),
+                    disabled=not bool(
+                        admin_code
+                        and confirm_repo == selected_name
+                    ),
                     key=f"delete_{selected_name}",
                 ):
                     if not hmac.compare_digest(

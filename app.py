@@ -8,7 +8,6 @@ from html import escape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-import jwt
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -35,8 +34,7 @@ PUBLISHER_MARKER = "BC Branded HTML Publisher"
 # ============================================================
 
 PUBLISH_OWNER = st.secrets["github"]["publish_owner"]
-GITHUB_APP_ID = str(st.secrets["github"]["app_id"])
-GITHUB_APP_PRIVATE_KEY = st.secrets["github"]["app_private_key"]
+GITHUB_PAT = st.secrets["github"]["pat"]
 ADMIN_DELETE_CODE = st.secrets["app"]["admin_delete_code"]
 
 # Exact approved user list is stored in Streamlit Secrets.
@@ -255,73 +253,32 @@ def gh_request(method, path, token, expected=(200,), **kwargs):
     return response
 
 
-def build_github_app_jwt():
-    now = int(time.time())
-    return jwt.encode(
-        {
-            "iat": now - 60,
-            "exp": now + 540,
-            "iss": GITHUB_APP_ID,
-        },
-        GITHUB_APP_PRIVATE_KEY,
-        algorithm="RS256",
-    )
-
-
-def create_installation_token():
-    app_jwt = build_github_app_jwt()
-
-    app_headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {app_jwt}",
-        "X-GitHub-Api-Version": API_VERSION,
-        "User-Agent": "bc-branded-html-publisher",
-    }
-
-    install_response = requests.get(
-        f"{API_ROOT}/orgs/{quote(PUBLISH_OWNER)}/installation",
-        headers=app_headers,
-        timeout=30,
-    )
-    if install_response.status_code != 200:
-        raise GitHubError(github_error_message(install_response))
-
-    installation_id = install_response.json()["id"]
-
-    token_response = requests.post(
-        f"{API_ROOT}/app/installations/{installation_id}/access_tokens",
-        headers=app_headers,
-        timeout=30,
-    )
-    if token_response.status_code != 201:
-        raise GitHubError(github_error_message(token_response))
-
-    data = token_response.json()
-    return data["token"], data.get("expires_at")
-
-
 def get_github_token():
-    cached_token = st.session_state.get("_gh_token")
-    cached_until = st.session_state.get("_gh_token_valid_until", 0)
+    """
+    Publish from the BetterCollective26 personal GitHub account.
+    The PAT must be created while signed in as BetterCollective26.
+    """
+    if not GITHUB_PAT:
+        raise GitHubError("GitHub PAT is missing from Streamlit Secrets.")
 
-    if cached_token and cached_until > time.time() + 300:
-        return cached_token
+    response = requests.get(
+        f"{API_ROOT}/user",
+        headers=github_headers(GITHUB_PAT),
+        timeout=20,
+    )
+    if response.status_code != 200:
+        raise GitHubError(github_error_message(response))
 
-    token, expires_at = create_installation_token()
+    authenticated_login = str(response.json().get("login", "")).lower()
 
-    valid_until = time.time() + 3000
-    if expires_at:
-        try:
-            valid_until = datetime.fromisoformat(
-                expires_at.replace("Z", "+00:00")
-            ).timestamp()
-        except Exception:
-            pass
+    if authenticated_login != str(PUBLISH_OWNER).lower():
+        raise GitHubError(
+            f"GitHub PAT belongs to '{authenticated_login}', but publish_owner "
+            f"is '{PUBLISH_OWNER}'. Create the PAT while signed in to "
+            f"{PUBLISH_OWNER}."
+        )
 
-    st.session_state["_gh_token"] = token
-    st.session_state["_gh_token_valid_until"] = valid_until
-
-    return token
+    return GITHUB_PAT
 
 
 # ============================================================
@@ -381,7 +338,7 @@ def create_repo(token: str, repo_name: str, brand: str):
 
     return gh_request(
         "POST",
-        f"/orgs/{quote(PUBLISH_OWNER)}/repos",
+        "/user/repos",
         token,
         expected=(201,),
         json=payload,
@@ -498,7 +455,7 @@ def list_publisher_repos(token: str):
     for page in range(1, 6):
         batch = gh_request(
             "GET",
-            f"/orgs/{quote(PUBLISH_OWNER)}/repos",
+            "/user/repos",
             token,
             expected=(200,),
             params={
@@ -657,7 +614,7 @@ with publish_tab:
 
         try:
             with st.status("Publishing…", expanded=True) as status:
-                st.write("Connecting to GitHub…")
+                st.write(f"Connecting to GitHub as {PUBLISH_OWNER}…")
                 token = get_github_token()
 
                 st.write("Generating repository name…")

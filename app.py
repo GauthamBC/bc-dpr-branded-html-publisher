@@ -9,7 +9,6 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
-import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -904,8 +903,6 @@ with manage_tab:
 
     try:
         token = get_github_token()
-
-        # Always fetch the current list when this screen renders.
         repos = list_publisher_repos(token)
 
         if not repos:
@@ -913,144 +910,190 @@ with manage_tab:
         else:
             records = [published_page_record(repo) for repo in repos]
 
-            # Minimal team-facing table.
-            table_data = pd.DataFrame(
-                [
-                    {
-                        "Page": record["page"],
-                        "Brand": record["brand"],
-                        "By": record["creator_name"],
-                        "Published": record["published"],
-                        "Live": record["live_url"],
-                    }
-                    for record in records
-                ]
-            )
+            # ------------------------------------------------------------
+            # Compact action table
+            # ------------------------------------------------------------
+            rows = []
 
-            table_height = min(520, 40 + (len(table_data) * 36))
+            for record in records:
+                repo_q = quote(record["repo_name"], safe="")
 
-            st.dataframe(
-                table_data,
-                hide_index=True,
-                use_container_width=True,
-                height=table_height,
-                column_config={
-                    "Page": st.column_config.TextColumn(
-                        "Page",
-                        width="large",
-                    ),
-                    "Brand": st.column_config.TextColumn(
-                        "Brand",
-                        width="medium",
-                    ),
-                    "By": st.column_config.TextColumn(
-                        "By",
-                        width="small",
-                    ),
-                    "Published": st.column_config.TextColumn(
-                        "Published",
-                        width="small",
-                    ),
-                    "Live": st.column_config.LinkColumn(
-                        "Live",
-                        display_text="Open",
-                        width="small",
-                    ),
-                },
-            )
-
-            # Keep management tools out of the main interface unless needed.
-            with st.expander("Manage a page", expanded=False):
-                option_labels = {
-                    (
-                        f'{record["page"]} · '
-                        f'{record["creator_name"]}'
-                    ): record
-                    for record in records
-                }
-
-                selected_label = st.selectbox(
-                    "Choose page",
-                    list(option_labels.keys()),
+                rows.append(
+                    "<tr>"
+                    f'<td class="c-page">{escape(record["page"])}</td>'
+                    f'<td class="c-brand">{escape(record["brand"])}</td>'
+                    f'<td class="c-by">{escape(record["creator_name"])}</td>'
+                    f'<td class="c-date">{escape(record["published"])}</td>'
+                    f'<td class="c-action"><a href="{escape(record["live_url"], quote=True)}" '
+                    'target="_blank" rel="noopener noreferrer">Open</a></td>'
+                    f'<td class="c-action"><a href="{escape(record["repo_url"], quote=True)}" '
+                    'target="_blank" rel="noopener noreferrer">Repo</a></td>'
+                    f'<td class="c-action"><a href="?action=replace&repo={repo_q}" '
+                    'target="_self">Replace</a></td>'
+                    f'<td class="c-action danger"><a href="?action=delete&repo={repo_q}" '
+                    'target="_self">Delete</a></td>'
+                    "</tr>"
                 )
 
-                selected_record = option_labels[selected_label]
-                selected = selected_record["repo"]
-                selected_name = selected_record["repo_name"]
+            table_html = (
+                '<style>'
+                '.pub-wrap{width:100%;overflow-x:hidden;border:1px solid rgba(128,128,128,.22);'
+                'margin:10px 0 16px 0;}'
+                '.pub-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;}'
+                '.pub-table th{font-weight:600;text-align:left;padding:8px 9px;'
+                'background:rgba(128,128,128,.06);border-bottom:1px solid rgba(128,128,128,.22);'
+                'white-space:nowrap;}'
+                '.pub-table td{padding:8px 9px;border-bottom:1px solid rgba(128,128,128,.14);'
+                'vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+                '.pub-table tr:last-child td{border-bottom:0;}'
+                '.pub-table .c-page{width:24%;font-weight:600;}'
+                '.pub-table .c-brand{width:18%;}'
+                '.pub-table .c-by{width:10%;}'
+                '.pub-table .c-date{width:12%;}'
+                '.pub-table .c-action{width:9%;text-align:center;}'
+                '.pub-table a{text-decoration:none;font-weight:600;}'
+                '.pub-table .danger a{color:#b42318;}'
+                '@media (max-width:900px){'
+                '.pub-table{font-size:12px;}'
+                '.pub-table th,.pub-table td{padding:7px 6px;}'
+                '.pub-table .c-page{width:23%;}'
+                '.pub-table .c-brand{width:17%;}'
+                '.pub-table .c-by{width:10%;}'
+                '.pub-table .c-date{width:12%;}'
+                '.pub-table .c-action{width:9.5%;}'
+                '}'
+                '</style>'
+                '<div class="pub-wrap">'
+                '<table class="pub-table">'
+                '<thead><tr>'
+                '<th class="c-page">Page</th>'
+                '<th class="c-brand">Brand</th>'
+                '<th class="c-by">By</th>'
+                '<th class="c-date">Published</th>'
+                '<th class="c-action">Live</th>'
+                '<th class="c-action">Repo</th>'
+                '<th class="c-action">Replace</th>'
+                '<th class="c-action">Delete</th>'
+                '</tr></thead>'
+                '<tbody>'
+                + "".join(rows)
+                + '</tbody></table></div>'
+            )
 
+            st.markdown(table_html, unsafe_allow_html=True)
+
+            # ------------------------------------------------------------
+            # Row action panel
+            # ------------------------------------------------------------
+            action = st.query_params.get("action", "")
+            selected_repo_name = st.query_params.get("repo", "")
+
+            selected_record = next(
+                (
+                    record
+                    for record in records
+                    if record["repo_name"] == selected_repo_name
+                ),
+                None,
+            )
+
+            if action in {"replace", "delete"} and selected_record:
+                st.divider()
+
+                action_header = (
+                    "Replace HTML"
+                    if action == "replace"
+                    else "Delete Page"
+                )
+
+                st.markdown(
+                    f"#### {action_header} · {selected_record['page']}"
+                )
                 st.caption(
-                    f'{selected_record["brand"]} · '
-                    f'{selected_record["published"]}'
+                    f"{selected_record['brand']} · "
+                    f"{selected_record['creator_name']} · "
+                    f"{selected_record['published']}"
                 )
 
-                st.link_button(
-                    "Open live page",
-                    selected_record["live_url"],
-                    use_container_width=True,
-                )
+                selected = selected_record["repo"]
 
-                with st.expander("Replace HTML", expanded=False):
+                if action == "replace":
                     replacement_html = st.text_area(
                         "New HTML",
-                        height=280,
-                        key=f"replacement_{selected_name}",
+                        height=300,
                         placeholder="Paste the complete replacement HTML here.",
+                        key=f"replacement_{selected_repo_name}",
                     )
 
-                    if st.button(
-                        "Update page",
-                        type="primary",
-                        use_container_width=True,
-                        disabled=not bool(replacement_html.strip()),
-                        key=f"update_{selected_name}",
-                    ):
-                        branch = selected.get("default_branch") or "main"
+                    col_update, col_cancel = st.columns([1, 1])
 
-                        update_file(
-                            token,
-                            selected_name,
-                            branch,
-                            "index.html",
-                            replacement_html.encode("utf-8"),
-                            f"Update HTML by {AUTHENTICATED_NAME}",
-                        )
+                    with col_update:
+                        if st.button(
+                            "Update page",
+                            type="primary",
+                            use_container_width=True,
+                            disabled=not bool(replacement_html.strip()),
+                        ):
+                            branch = selected.get("default_branch") or "main"
 
-                        st.success("Page updated.")
+                            update_file(
+                                token,
+                                selected_repo_name,
+                                branch,
+                                "index.html",
+                                replacement_html.encode("utf-8"),
+                                f"Update HTML by {AUTHENTICATED_NAME}",
+                            )
 
-                with st.expander("Delete page", expanded=False):
-                    st.caption(
-                        "Permanent. Requires the admin delete code and exact repository name."
+                            st.success("Page updated.")
+
+                    with col_cancel:
+                        if st.button(
+                            "Cancel",
+                            use_container_width=True,
+                            key="cancel_replace",
+                        ):
+                            st.query_params.clear()
+                            st.rerun()
+
+                elif action == "delete":
+                    st.warning(
+                        "This permanently deletes the GitHub repository and live page."
                     )
 
                     admin_code = st.text_input(
                         "Admin delete code",
                         type="password",
-                        key=f"delete_code_{selected_name}",
+                        key=f"delete_code_{selected_repo_name}",
                     )
 
-                    confirm_repo = st.text_input(
-                        "Repository name",
-                        placeholder=selected_name,
-                        key=f"delete_confirm_{selected_name}",
-                    )
+                    col_delete, col_cancel = st.columns([1, 1])
 
-                    if st.button(
-                        "Delete permanently",
-                        use_container_width=True,
-                        disabled=not bool(
-                            admin_code
-                            and confirm_repo == selected_name
-                        ),
-                        key=f"delete_{selected_name}",
-                    ):
-                        if not hmac.compare_digest(
-                            str(admin_code),
-                            str(ADMIN_DELETE_CODE),
+                    with col_delete:
+                        if st.button(
+                            "Delete permanently",
+                            type="primary",
+                            use_container_width=True,
+                            disabled=not bool(admin_code),
                         ):
-                            st.error("Incorrect admin delete code.")
-                        else:
-                            delete_repo(token, selected_name)
-                            st.success("Page deleted.")
+                            if not hmac.compare_digest(
+                                str(admin_code),
+                                str(ADMIN_DELETE_CODE),
+                            ):
+                                st.error("Incorrect admin delete code.")
+                            else:
+                                delete_repo(token, selected_repo_name)
+                                st.query_params.clear()
+                                st.success("Page deleted.")
+                                st.rerun()
+
+                    with col_cancel:
+                        if st.button(
+                            "Cancel",
+                            use_container_width=True,
+                            key="cancel_delete",
+                        ):
+                            st.query_params.clear()
                             st.rerun()
 
     except Exception as exc:

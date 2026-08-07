@@ -858,6 +858,10 @@ with publish_tab:
                 pages_url,
                 use_container_width=True,
             )
+            st.caption(
+                "GitHub Pages may take a minute to go live. "
+                "If it isn’t ready yet, check the link again shortly."
+            )
 
             st.markdown("#### Repository")
             st.code(created_repo_url, language=None)
@@ -1006,6 +1010,7 @@ with manage_tab:
                     ):
                         st.session_state["pending_manage_action"] = "repo"
                         st.session_state["pending_manage_repo"] = record["repo_name"]
+                        st.session_state["manage_action_open"] = True
                         st.session_state.pop("manage_reauthed", None)
                         st.rerun()
 
@@ -1017,6 +1022,7 @@ with manage_tab:
                     ):
                         st.session_state["pending_manage_action"] = "replace"
                         st.session_state["pending_manage_repo"] = record["repo_name"]
+                        st.session_state["manage_action_open"] = True
                         st.session_state.pop("manage_reauthed", None)
                         st.rerun()
 
@@ -1028,6 +1034,7 @@ with manage_tab:
                     ):
                         st.session_state["pending_manage_action"] = "delete"
                         st.session_state["pending_manage_repo"] = record["repo_name"]
+                        st.session_state["manage_action_open"] = True
                         st.session_state.pop("manage_reauthed", None)
                         st.rerun()
 
@@ -1052,7 +1059,11 @@ with manage_tab:
                 None,
             )
 
-            if action in {"repo", "replace", "delete"} and selected_record:
+            if (
+                st.session_state.get("manage_action_open")
+                and action in {"repo", "replace", "delete"}
+                and selected_record
+            ):
                 creator_email = (
                     selected_record.get("creator_email") or ""
                 ).strip().lower()
@@ -1080,8 +1091,8 @@ with manage_tab:
                     creator_name = selected_record["creator_name"] or "the original creator"
 
                     st.info(
-                        f"This page was created by {creator_name}. "
-                        f"Sign in as {creator_name} to manage it."
+                        f"Created by {creator_name}. "
+                        f"Sign in as {creator_name} to access the repo or make changes."
                     )
 
                     if st.button(
@@ -1092,6 +1103,7 @@ with manage_tab:
                         st.session_state.pop("pending_manage_action", None)
                         st.session_state.pop("pending_manage_repo", None)
                         st.session_state.pop("manage_reauthed", None)
+                        st.session_state.pop("manage_action_open", None)
                         st.rerun()
 
                 else:
@@ -1166,6 +1178,7 @@ with manage_tab:
                                 st.session_state.pop("pending_manage_action", None)
                                 st.session_state.pop("pending_manage_repo", None)
                                 st.session_state.pop("manage_reauthed", None)
+                                st.session_state.pop("manage_action_open", None)
                                 st.rerun()
 
                         elif action == "replace":
@@ -1203,6 +1216,7 @@ with manage_tab:
                                     st.session_state.pop("pending_manage_action", None)
                                     st.session_state.pop("pending_manage_repo", None)
                                     st.session_state.pop("manage_reauthed", None)
+                                    st.session_state.pop("manage_action_open", None)
                                     st.success("Page updated.")
                                     st.rerun()
 
@@ -1236,6 +1250,7 @@ with manage_tab:
                                     st.session_state.pop("pending_manage_action", None)
                                     st.session_state.pop("pending_manage_repo", None)
                                     st.session_state.pop("manage_reauthed", None)
+                                    st.session_state.pop("manage_action_open", None)
 
                                     st.success("Page deleted.")
                                     st.rerun()

@@ -9,6 +9,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -899,169 +900,158 @@ with publish_tab:
 
 with manage_tab:
     st.markdown("### Published Pages")
-    st.caption(
-        "All pages published through this tool are visible to approved team members."
-    )
-
-    top_left, top_right = st.columns([1, 3])
-
-    with top_left:
-        if st.button("Refresh list", use_container_width=True):
-            st.session_state.pop("repo_cache", None)
-            st.rerun()
+    st.caption("Pages published through this tool.")
 
     try:
         token = get_github_token()
 
-        if "repo_cache" not in st.session_state:
-            st.session_state["repo_cache"] = list_publisher_repos(token)
-
-        repos = st.session_state["repo_cache"]
+        # Always fetch the current list when this screen renders.
+        repos = list_publisher_repos(token)
 
         if not repos:
-            st.info("No repositories created by this publisher were found.")
+            st.info("No published pages yet.")
         else:
             records = [published_page_record(repo) for repo in repos]
 
-            scope = st.radio(
-                "View",
-                ["All Pages", "My Pages"],
-                horizontal=True,
-                label_visibility="collapsed",
-            )
-
-            if scope == "My Pages":
-                visible_records = [
-                    record
+            # Minimal team-facing table.
+            table_data = pd.DataFrame(
+                [
+                    {
+                        "Page": record["page"],
+                        "Brand": record["brand"],
+                        "By": record["creator_name"],
+                        "Published": record["published"],
+                        "Live": record["live_url"],
+                    }
                     for record in records
-                    if record["creator_email"] == AUTHENTICATED_EMAIL
                 ]
-            else:
-                visible_records = records
-
-            if not visible_records:
-                if scope == "My Pages":
-                    st.info("You have not published any pages yet.")
-                else:
-                    st.info("No published pages were found.")
-            else:
-                render_published_pages_table(visible_records)
-
-            st.markdown("### Manage a Page")
-            st.caption(
-                "Choose a page below only when you need to update its HTML or delete it."
             )
 
-            option_labels = {
-                (
-                    f'{record["page"]} · {record["brand"]} · '
-                    f'{record["creator_name"]} · {record["published"]}'
-                ): record
-                for record in records
-            }
+            table_height = min(520, 40 + (len(table_data) * 36))
 
-            selected_label = st.selectbox(
-                "Page",
-                list(option_labels.keys()),
-                label_visibility="collapsed",
+            st.dataframe(
+                table_data,
+                hide_index=True,
+                use_container_width=True,
+                height=table_height,
+                column_config={
+                    "Page": st.column_config.TextColumn(
+                        "Page",
+                        width="large",
+                    ),
+                    "Brand": st.column_config.TextColumn(
+                        "Brand",
+                        width="medium",
+                    ),
+                    "By": st.column_config.TextColumn(
+                        "By",
+                        width="small",
+                    ),
+                    "Published": st.column_config.TextColumn(
+                        "Published",
+                        width="small",
+                    ),
+                    "Live": st.column_config.LinkColumn(
+                        "Live",
+                        display_text="Open",
+                        width="small",
+                    ),
+                },
             )
 
-            selected_record = option_labels[selected_label]
-            selected = selected_record["repo"]
-            selected_name = selected_record["repo_name"]
-            pages_url = selected_record["live_url"]
+            # Keep management tools out of the main interface unless needed.
+            with st.expander("Manage a page", expanded=False):
+                option_labels = {
+                    (
+                        f'{record["page"]} · '
+                        f'{record["creator_name"]}'
+                    ): record
+                    for record in records
+                }
 
-            info1, info2, info3 = st.columns([1, 1, 1])
-
-            with info1:
-                st.metric("Brand", selected_record["brand"])
-
-            with info2:
-                st.metric("Created By", selected_record["creator_name"])
-
-            with info3:
-                st.metric("Published", selected_record["published"])
-
-            open1, open2 = st.columns(2)
-
-            with open1:
-                st.link_button(
-                    "Open repository",
-                    selected_record["repo_url"],
-                    use_container_width=True,
+                selected_label = st.selectbox(
+                    "Choose page",
+                    list(option_labels.keys()),
                 )
 
-            with open2:
+                selected_record = option_labels[selected_label]
+                selected = selected_record["repo"]
+                selected_name = selected_record["repo_name"]
+
+                st.caption(
+                    f'{selected_record["brand"]} · '
+                    f'{selected_record["published"]}'
+                )
+
                 st.link_button(
                     "Open live page",
-                    pages_url,
+                    selected_record["live_url"],
                     use_container_width=True,
                 )
 
-            with st.expander("Update index.html"):
-                replacement_html = st.text_area(
-                    "Replacement HTML",
-                    height=320,
-                    key=f"replacement_{selected_name}",
-                )
-
-                if st.button(
-                    "Update existing page",
-                    use_container_width=True,
-                    disabled=not bool(replacement_html.strip()),
-                    key=f"update_{selected_name}",
-                ):
-                    branch = selected.get("default_branch") or "main"
-
-                    update_file(
-                        token,
-                        selected_name,
-                        branch,
-                        "index.html",
-                        replacement_html.encode("utf-8"),
-                        f"Update HTML by {AUTHENTICATED_NAME}",
+                with st.expander("Replace HTML", expanded=False):
+                    replacement_html = st.text_area(
+                        "New HTML",
+                        height=280,
+                        key=f"replacement_{selected_name}",
+                        placeholder="Paste the complete replacement HTML here.",
                     )
 
-                    st.success(
-                        "index.html updated. GitHub Pages will rebuild automatically."
-                    )
-
-            with st.expander("Delete repository"):
-                st.warning(
-                    "This permanently deletes the repository and GitHub Pages site."
-                )
-
-                admin_code = st.text_input(
-                    "Admin delete code",
-                    type="password",
-                    key=f"delete_code_{selected_name}",
-                )
-
-                confirm_repo = st.text_input(
-                    "Type the exact repository name",
-                    key=f"delete_confirm_{selected_name}",
-                )
-
-                if st.button(
-                    "Permanently delete repository",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not bool(
-                        admin_code
-                        and confirm_repo == selected_name
-                    ),
-                    key=f"delete_{selected_name}",
-                ):
-                    if not hmac.compare_digest(
-                        str(admin_code),
-                        str(ADMIN_DELETE_CODE),
+                    if st.button(
+                        "Update page",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=not bool(replacement_html.strip()),
+                        key=f"update_{selected_name}",
                     ):
-                        st.error("Incorrect admin delete code.")
-                    else:
-                        delete_repo(token, selected_name)
-                        st.session_state.pop("repo_cache", None)
-                        st.success(f"Deleted {selected_name}.")
-                        st.rerun()
+                        branch = selected.get("default_branch") or "main"
+
+                        update_file(
+                            token,
+                            selected_name,
+                            branch,
+                            "index.html",
+                            replacement_html.encode("utf-8"),
+                            f"Update HTML by {AUTHENTICATED_NAME}",
+                        )
+
+                        st.success("Page updated.")
+
+                with st.expander("Delete page", expanded=False):
+                    st.caption(
+                        "Permanent. Requires the admin delete code and exact repository name."
+                    )
+
+                    admin_code = st.text_input(
+                        "Admin delete code",
+                        type="password",
+                        key=f"delete_code_{selected_name}",
+                    )
+
+                    confirm_repo = st.text_input(
+                        "Repository name",
+                        placeholder=selected_name,
+                        key=f"delete_confirm_{selected_name}",
+                    )
+
+                    if st.button(
+                        "Delete permanently",
+                        use_container_width=True,
+                        disabled=not bool(
+                            admin_code
+                            and confirm_repo == selected_name
+                        ),
+                        key=f"delete_{selected_name}",
+                    ):
+                        if not hmac.compare_digest(
+                            str(admin_code),
+                            str(ADMIN_DELETE_CODE),
+                        ):
+                            st.error("Incorrect admin delete code.")
+                        else:
+                            delete_repo(token, selected_name)
+                            st.success("Page deleted.")
+                            st.rerun()
 
     except Exception as exc:
         st.error(str(exc))

@@ -899,7 +899,7 @@ with publish_tab:
 
 with manage_tab:
     st.markdown("### Published Pages")
-    st.caption("Pages published through this tool.")
+    st.caption("Only the original creator can access the repo, replace HTML, or delete a page.")
 
     try:
         token = get_github_token()
@@ -914,9 +914,11 @@ with manage_tab:
             # Compact action table
             # ------------------------------------------------------------
             rows = []
+            render_nonce = str(int(time.time() * 1000))
 
-            for record in records:
+            for idx, record in enumerate(records):
                 repo_q = quote(record["repo_name"], safe="")
+                base_nonce = f"{render_nonce}-{idx}"
 
                 rows.append(
                     "<tr>"
@@ -926,11 +928,11 @@ with manage_tab:
                     f'<td class="c-date">{escape(record["published"])}</td>'
                     f'<td class="c-action"><a href="{escape(record["live_url"], quote=True)}" '
                     'target="_blank" rel="noopener noreferrer">Open</a></td>'
-                    f'<td class="c-action"><a href="{escape(record["repo_url"], quote=True)}" '
-                    'target="_blank" rel="noopener noreferrer">Repo</a></td>'
-                    f'<td class="c-action"><a href="?action=replace&repo={repo_q}" '
+                    f'<td class="c-action"><a href="?action=repo&repo={repo_q}&nonce={base_nonce}-repo" '
+                    'target="_self">Repo</a></td>'
+                    f'<td class="c-action"><a href="?action=replace&repo={repo_q}&nonce={base_nonce}-replace" '
                     'target="_self">Replace</a></td>'
-                    f'<td class="c-action danger"><a href="?action=delete&repo={repo_q}" '
+                    f'<td class="c-action danger"><a href="?action=delete&repo={repo_q}&nonce={base_nonce}-delete" '
                     'target="_self">Delete</a></td>'
                     "</tr>"
                 )
@@ -983,10 +985,11 @@ with manage_tab:
             st.markdown(table_html, unsafe_allow_html=True)
 
             # ------------------------------------------------------------
-            # Row action panel
+            # Owner-only action panel
             # ------------------------------------------------------------
             action = st.query_params.get("action", "")
             selected_repo_name = st.query_params.get("repo", "")
+            action_nonce = st.query_params.get("nonce", "")
 
             selected_record = next(
                 (
@@ -997,104 +1000,214 @@ with manage_tab:
                 None,
             )
 
-            if action in {"replace", "delete"} and selected_record:
+            if action in {"repo", "replace", "delete"} and selected_record:
                 st.divider()
 
-                action_header = (
-                    "Replace HTML"
-                    if action == "replace"
-                    else "Delete Page"
+                creator_email = (
+                    selected_record.get("creator_email") or ""
+                ).strip().lower()
+
+                # Fallback for older publisher-created repos where the email
+                # may not have been written into the repository description.
+                if not creator_email:
+                    matching_emails = [
+                        email
+                        for email, user_data in USERS.items()
+                        if str(user_data["name"]).strip().lower()
+                        == str(selected_record["creator_name"]).strip().lower()
+                    ]
+                    if len(matching_emails) == 1:
+                        creator_email = matching_emails[0]
+
+                is_owner = (
+                    creator_email
+                    and AUTHENTICATED_EMAIL == creator_email
                 )
 
-                st.markdown(
-                    f"#### {action_header} · {selected_record['page']}"
-                )
-                st.caption(
-                    f"{selected_record['brand']} · "
-                    f"{selected_record['creator_name']} · "
-                    f"{selected_record['published']}"
-                )
+                if not is_owner:
+                    creator_name = selected_record["creator_name"] or "the original creator"
 
-                selected = selected_record["repo"]
-
-                if action == "replace":
-                    replacement_html = st.text_area(
-                        "New HTML",
-                        height=300,
-                        placeholder="Paste the complete replacement HTML here.",
-                        key=f"replacement_{selected_repo_name}",
+                    st.info(
+                        f"This page was created by {creator_name}. "
+                        f"Sign in as {creator_name} to manage it."
                     )
 
-                    col_update, col_cancel = st.columns([1, 1])
+                    if st.button(
+                        "Sign out",
+                        use_container_width=True,
+                        key=f"owner_signout_{selected_repo_name}_{action}",
+                    ):
+                        st.query_params.clear()
 
-                    with col_update:
-                        if st.button(
-                            "Update page",
-                            type="primary",
-                            use_container_width=True,
-                            disabled=not bool(replacement_html.strip()),
+                        for key in list(st.session_state.keys()):
+                            if (
+                                key.startswith("_gh_")
+                                or key.startswith("_reauth_")
+                                or key in {
+                                    "authenticated_email",
+                                    "authenticated_name",
+                                    "repo_cache",
+                                }
+                            ):
+                                st.session_state.pop(key, None)
+
+                        st.rerun()
+
+                else:
+                    action_labels = {
+                        "repo": "Open Repository",
+                        "replace": "Replace HTML",
+                        "delete": "Delete Page",
+                    }
+
+                    st.markdown(
+                        f"#### {action_labels[action]} · {selected_record['page']}"
+                    )
+                    st.caption(
+                        f"{selected_record['brand']} · "
+                        f"{selected_record['creator_name']} · "
+                        f"{selected_record['published']}"
+                    )
+
+                    # The nonce makes every new click a fresh re-authentication request.
+                    reauth_key = (
+                        f"_reauth_{AUTHENTICATED_EMAIL}_"
+                        f"{selected_repo_name}_{action}_{action_nonce}"
+                    )
+
+                    if not st.session_state.get(reauth_key):
+                        st.caption("Confirm your identity to continue.")
+
+                        with st.form(
+                            f"reauth_form_{selected_repo_name}_{action}_{action_nonce}"
                         ):
-                            branch = selected.get("default_branch") or "main"
-
-                            update_file(
-                                token,
-                                selected_repo_name,
-                                branch,
-                                "index.html",
-                                replacement_html.encode("utf-8"),
-                                f"Update HTML by {AUTHENTICATED_NAME}",
+                            passcode = st.text_input(
+                                "Passcode",
+                                type="password",
                             )
 
-                            st.success("Page updated.")
+                            confirm_identity = st.form_submit_button(
+                                "Continue",
+                                type="primary",
+                                use_container_width=True,
+                            )
 
-                    with col_cancel:
-                        if st.button(
-                            "Cancel",
-                            use_container_width=True,
-                            key="cancel_replace",
-                        ):
-                            st.query_params.clear()
-                            st.rerun()
+                        if confirm_identity:
+                            expected_passcode = str(
+                                USERS[AUTHENTICATED_EMAIL]["passcode"]
+                            )
 
-                elif action == "delete":
-                    st.warning(
-                        "This permanently deletes the GitHub repository and live page."
-                    )
-
-                    admin_code = st.text_input(
-                        "Admin delete code",
-                        type="password",
-                        key=f"delete_code_{selected_repo_name}",
-                    )
-
-                    col_delete, col_cancel = st.columns([1, 1])
-
-                    with col_delete:
-                        if st.button(
-                            "Delete permanently",
-                            type="primary",
-                            use_container_width=True,
-                            disabled=not bool(admin_code),
-                        ):
-                            if not hmac.compare_digest(
-                                str(admin_code),
-                                str(ADMIN_DELETE_CODE),
+                            if (
+                                passcode
+                                and hmac.compare_digest(
+                                    str(passcode),
+                                    expected_passcode,
+                                )
                             ):
-                                st.error("Incorrect admin delete code.")
+                                st.session_state[reauth_key] = True
+                                st.rerun()
                             else:
-                                delete_repo(token, selected_repo_name)
+                                st.error("Incorrect passcode.")
+
+                    else:
+                        selected = selected_record["repo"]
+
+                        if action == "repo":
+                            st.success("Identity confirmed.")
+                            st.link_button(
+                                "Open GitHub repository",
+                                selected_record["repo_url"],
+                                use_container_width=True,
+                            )
+                            st.caption(
+                                "The repository contains the published index.html."
+                            )
+
+                            if st.button(
+                                "Done",
+                                use_container_width=True,
+                                key=f"done_repo_{action_nonce}",
+                            ):
+                                st.session_state.pop(reauth_key, None)
                                 st.query_params.clear()
-                                st.success("Page deleted.")
                                 st.rerun()
 
-                    with col_cancel:
-                        if st.button(
-                            "Cancel",
-                            use_container_width=True,
-                            key="cancel_delete",
-                        ):
-                            st.query_params.clear()
-                            st.rerun()
+                        elif action == "replace":
+                            replacement_html = st.text_area(
+                                "New HTML",
+                                height=300,
+                                placeholder="Paste the complete replacement HTML here.",
+                                key=f"replacement_{selected_repo_name}_{action_nonce}",
+                            )
+
+                            update_col, cancel_col = st.columns(2)
+
+                            with update_col:
+                                if st.button(
+                                    "Update page",
+                                    type="primary",
+                                    use_container_width=True,
+                                    disabled=not bool(replacement_html.strip()),
+                                    key=f"update_{selected_repo_name}_{action_nonce}",
+                                ):
+                                    branch = (
+                                        selected.get("default_branch")
+                                        or "main"
+                                    )
+
+                                    update_file(
+                                        token,
+                                        selected_repo_name,
+                                        branch,
+                                        "index.html",
+                                        replacement_html.encode("utf-8"),
+                                        f"Update HTML by {AUTHENTICATED_NAME}",
+                                    )
+
+                                    st.session_state.pop(reauth_key, None)
+                                    st.query_params.clear()
+                                    st.success("Page updated.")
+                                    st.rerun()
+
+                            with cancel_col:
+                                if st.button(
+                                    "Cancel",
+                                    use_container_width=True,
+                                    key=f"cancel_replace_{action_nonce}",
+                                ):
+                                    st.session_state.pop(reauth_key, None)
+                                    st.query_params.clear()
+                                    st.rerun()
+
+                        elif action == "delete":
+                            st.warning(
+                                "This permanently deletes the repository and live page."
+                            )
+
+                            delete_col, cancel_col = st.columns(2)
+
+                            with delete_col:
+                                if st.button(
+                                    "Delete permanently",
+                                    type="primary",
+                                    use_container_width=True,
+                                    key=f"delete_{selected_repo_name}_{action_nonce}",
+                                ):
+                                    delete_repo(token, selected_repo_name)
+                                    st.session_state.pop(reauth_key, None)
+                                    st.query_params.clear()
+                                    st.success("Page deleted.")
+                                    st.rerun()
+
+                            with cancel_col:
+                                if st.button(
+                                    "Cancel",
+                                    use_container_width=True,
+                                    key=f"cancel_delete_{action_nonce}",
+                                ):
+                                    st.session_state.pop(reauth_key, None)
+                                    st.query_params.clear()
+                                    st.rerun()
 
     except Exception as exc:
         st.error(str(exc))

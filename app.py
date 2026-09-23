@@ -671,6 +671,340 @@ def render_published_pages_table(records):
     st.markdown(table_html, unsafe_allow_html=True)
 
 
+
+# ============================================================
+# QUICK GUIDE DIALOG
+# ============================================================
+
+@st.dialog("How to use Branded HTML Publisher", width="large")
+def render_quick_guide():
+    st.markdown(
+        """
+        <style>
+          .quick-guide-intro {
+            margin: -4px 0 22px 0;
+            color: rgba(49, 52, 64, .72);
+            font-size: .98rem;
+            line-height: 1.55;
+          }
+
+          .quick-guide-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 8px;
+            color: #08724c;
+            font-size: .76rem;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+          }
+
+          .quick-guide-kicker-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00b67a;
+          }
+
+          .quick-guide-section-title {
+            margin: 2px 0 12px 0;
+            font-size: .98rem;
+            font-weight: 750;
+            color: #2f3140;
+          }
+
+          .quick-guide-steps {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 9px;
+            margin-bottom: 24px;
+          }
+
+          .quick-guide-step {
+            min-height: 128px;
+            padding: 14px 13px;
+            border: 1px solid rgba(128,128,128,.20);
+            border-radius: 12px;
+            background: rgba(128,128,128,.045);
+          }
+
+          .quick-guide-step-number {
+            width: 29px;
+            height: 29px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 11px;
+            border-radius: 8px;
+            background: #00b67a;
+            color: white;
+            font-size: .76rem;
+            font-weight: 800;
+          }
+
+          .quick-guide-step strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #2f3140;
+            font-size: .88rem;
+          }
+
+          .quick-guide-step span {
+            display: block;
+            color: rgba(49, 52, 64, .68);
+            font-size: .77rem;
+            line-height: 1.42;
+          }
+
+          .quick-guide-permissions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+          }
+
+          .quick-guide-card {
+            padding: 17px;
+            border: 1px solid rgba(128,128,128,.20);
+            border-radius: 12px;
+            background: white;
+          }
+
+          .quick-guide-card.owner {
+            border-color: rgba(0,182,122,.22);
+            background: rgba(0,182,122,.055);
+          }
+
+          .quick-guide-card h3 {
+            margin: 0 0 4px 0;
+            color: #2f3140;
+            font-size: .96rem;
+          }
+
+          .quick-guide-card-sub {
+            margin: 0 0 12px 0;
+            color: rgba(49, 52, 64, .62);
+            font-size: .79rem;
+          }
+
+          .quick-guide-rule {
+            display: flex;
+            align-items: flex-start;
+            gap: 9px;
+            margin: 8px 0;
+            color: #4b4f5b;
+            font-size: .84rem;
+            line-height: 1.4;
+          }
+
+          .quick-guide-icon {
+            width: 20px;
+            height: 20px;
+            flex: 0 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1px;
+            border-radius: 50%;
+            font-size: .72rem;
+            font-weight: 900;
+          }
+
+          .quick-guide-icon.yes {
+            background: #d7f5e8;
+            color: #08724c;
+          }
+
+          .quick-guide-icon.no {
+            background: #f7e6e6;
+            color: #b63d3d;
+          }
+
+          .quick-guide-note {
+            display: grid;
+            grid-template-columns: 34px 1fr;
+            gap: 12px;
+            align-items: flex-start;
+            padding: 15px 16px;
+            border: 1px solid rgba(0,182,122,.18);
+            border-radius: 12px;
+            background: rgba(0,182,122,.035);
+          }
+
+          .quick-guide-note-icon {
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            background: #e6f7f0;
+            color: #08724c;
+            font-weight: 900;
+          }
+
+          .quick-guide-note strong {
+            display: block;
+            margin-bottom: 3px;
+            color: #2f3140;
+            font-size: .88rem;
+          }
+
+          .quick-guide-note p {
+            margin: 0;
+            color: rgba(49, 52, 64, .68);
+            font-size: .82rem;
+            line-height: 1.5;
+          }
+
+          .quick-guide-finish {
+            margin: 18px 0 2px 0;
+            text-align: center;
+            color: rgba(49, 52, 64, .68);
+            font-size: .86rem;
+          }
+
+          .quick-guide-finish strong {
+            color: #2f3140;
+          }
+
+          @media (max-width: 800px) {
+            .quick-guide-steps {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .quick-guide-permissions {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 520px) {
+            .quick-guide-steps {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+
+        <div class="quick-guide-kicker">
+          <span class="quick-guide-kicker-dot"></span>
+          Quick Guide
+        </div>
+
+        <p class="quick-guide-intro">
+          Turn a finished HTML build into a live GitHub Pages link and CMS-ready iframe
+          without manually setting up a repository.
+        </p>
+
+        <div class="quick-guide-section-title">Publish in five simple steps</div>
+
+        <div class="quick-guide-steps">
+          <div class="quick-guide-step">
+            <div class="quick-guide-step-number">01</div>
+            <strong>Choose Brand</strong>
+            <span>Select the Better Collective brand the page belongs to.</span>
+          </div>
+
+          <div class="quick-guide-step">
+            <div class="quick-guide-step-number">02</div>
+            <strong>Add HTML</strong>
+            <span>Paste your complete HTML or upload an HTML file.</span>
+          </div>
+
+          <div class="quick-guide-step">
+            <div class="quick-guide-step-number">03</div>
+            <strong>Preview</strong>
+            <span>Check the build before you publish it.</span>
+          </div>
+
+          <div class="quick-guide-step">
+            <div class="quick-guide-step-number">04</div>
+            <strong>Publish</strong>
+            <span>The tool creates the repository and enables GitHub Pages.</span>
+          </div>
+
+          <div class="quick-guide-step">
+            <div class="quick-guide-step-number">05</div>
+            <strong>Copy &amp; Embed</strong>
+            <span>Use the live URL or copy the ready-to-paste iframe.</span>
+          </div>
+        </div>
+
+        <div class="quick-guide-section-title">Managing published pages</div>
+
+        <div class="quick-guide-permissions">
+          <div class="quick-guide-card owner">
+            <h3>Your pages</h3>
+            <p class="quick-guide-card-sub">Pages you originally published.</p>
+
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon yes">✓</span>
+              <span>Open the live page</span>
+            </div>
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon yes">✓</span>
+              <span>Open the GitHub repository</span>
+            </div>
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon yes">✓</span>
+              <span>Replace the HTML</span>
+            </div>
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon yes">✓</span>
+              <span>Delete the page</span>
+            </div>
+          </div>
+
+          <div class="quick-guide-card">
+            <h3>Other people's pages</h3>
+            <p class="quick-guide-card-sub">Pages published by another approved user.</p>
+
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon yes">✓</span>
+              <span>Open and view the live page</span>
+            </div>
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon yes">✓</span>
+              <span>Browse layouts and interactions for inspiration</span>
+            </div>
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon no">×</span>
+              <span>Edit or replace their HTML</span>
+            </div>
+            <div class="quick-guide-rule">
+              <span class="quick-guide-icon no">×</span>
+              <span>Delete their page or access creator-only actions</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="quick-guide-note">
+          <div class="quick-guide-note-icon">i</div>
+          <div>
+            <strong>Good to know</strong>
+            <p>
+              GitHub Pages can take a minute to go live after publishing.
+              Creator-only actions require the original creator to re-enter their passcode.
+            </p>
+          </div>
+        </div>
+
+        <div class="quick-guide-finish">
+          <strong>That's it.</strong> Paste → Preview → Publish.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button(
+        "Got it",
+        type="primary",
+        use_container_width=True,
+        key="close_quick_guide",
+    ):
+        st.rerun()
+
+
 # ============================================================
 # HEADER
 # ============================================================
@@ -684,6 +1018,17 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+guide_spacer, guide_button_col = st.columns([5.8, 1.2])
+
+with guide_button_col:
+    if st.button(
+        "❔ Quick Guide",
+        use_container_width=True,
+        key="open_quick_guide",
+    ):
+        render_quick_guide()
+
 
 st.markdown(
     f"""

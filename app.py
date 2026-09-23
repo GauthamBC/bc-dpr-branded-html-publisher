@@ -103,6 +103,36 @@ st.markdown(
         padding: 12px 14px;
         overflow-wrap: anywhere;
       }
+
+      /* Make the Quick Guide easy to spot after login. */
+      .st-key-open_quick_guide button {
+        background: #00b67a !important;
+        color: #ffffff !important;
+        border: 1px solid #00a86f !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 14px rgba(0, 182, 122, .22) !important;
+        transition:
+          transform .15s ease,
+          box-shadow .15s ease,
+          background .15s ease !important;
+      }
+
+      .st-key-open_quick_guide button:hover {
+        background: #009f6b !important;
+        color: #ffffff !important;
+        border-color: #008f60 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 7px 18px rgba(0, 182, 122, .28) !important;
+      }
+
+      .st-key-open_quick_guide button:focus {
+        color: #ffffff !important;
+        border-color: #008f60 !important;
+        box-shadow:
+          0 0 0 3px rgba(0, 182, 122, .18),
+          0 4px 14px rgba(0, 182, 122, .22) !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -678,7 +708,7 @@ def render_published_pages_table(records):
 
 @st.dialog("How to use Branded HTML Publisher", width="large")
 def render_quick_guide():
-    st.markdown(
+    st.html(
         """
         <style>
           .quick-guide-intro {
@@ -992,8 +1022,7 @@ def render_quick_guide():
         <div class="quick-guide-finish">
           <strong>That's it.</strong> Paste → Preview → Publish.
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     if st.button(
@@ -1023,7 +1052,7 @@ guide_spacer, guide_button_col = st.columns([5.8, 1.2])
 
 with guide_button_col:
     if st.button(
-        "❔ Quick Guide",
+        "📖 Quick Guide",
         use_container_width=True,
         key="open_quick_guide",
     ):

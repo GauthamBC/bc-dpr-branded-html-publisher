@@ -1123,18 +1123,23 @@ def render_quick_guide():
 
 def start_new_publish_session():
     """
-    Clear the current publishing session while keeping the user signed in.
-    This resets brand/page/HTML inputs, upload state, the latest publish result,
-    iframe-height controls, and any open manage-page action.
+    Start a genuinely fresh publishing form while keeping the user signed in.
+
+    Streamlit can preserve browser-side widget state when the same widget keys
+    are recreated immediately. To guarantee a clean form, increment a session
+    generation number and use it in every Publish-form widget key.
     """
-    keep = {
-        "authenticated_email",
-        "authenticated_name",
-    }
+    next_session_id = int(st.session_state.get("publish_session_id", 0)) + 1
+
+    authenticated_email = st.session_state.get("authenticated_email")
+    authenticated_name = st.session_state.get("authenticated_name")
 
     for key in list(st.session_state.keys()):
-        if key not in keep:
-            st.session_state.pop(key, None)
+        st.session_state.pop(key, None)
+
+    st.session_state["authenticated_email"] = authenticated_email
+    st.session_state["authenticated_name"] = authenticated_name
+    st.session_state["publish_session_id"] = next_session_id
 
 
 # ============================================================
@@ -1173,6 +1178,12 @@ st.markdown(
 )
 
 
+if "publish_session_id" not in st.session_state:
+    st.session_state["publish_session_id"] = 0
+
+publish_session_id = int(st.session_state["publish_session_id"])
+
+
 with st.sidebar:
     st.subheader("Publisher")
     st.caption(f"Signed in as **{AUTHENTICATED_NAME}**")
@@ -1208,20 +1219,20 @@ with publish_tab:
         brand = st.selectbox(
             "Brand",
             list(BRANDS.keys()),
-            key="publish_brand",
+            key=f"publish_brand_{publish_session_id}",
         )
 
     with col2:
         page_name = st.text_input(
             "Page name",
             placeholder="e.g. NFL Stadium Family Costs",
-            key="publish_page_name",
+            key=f"publish_page_name_{publish_session_id}",
         )
 
     uploaded = st.file_uploader(
         "Optional HTML upload",
         type=["html", "htm"],
-        key="publish_html_upload",
+        key=f"publish_html_upload_{publish_session_id}",
     )
 
     uploaded_html = ""
@@ -1233,7 +1244,7 @@ with publish_tab:
         value=uploaded_html,
         height=450,
         placeholder="<!DOCTYPE html>\n<html>\n...\n</html>",
-        key="publish_html_text",
+        key=f"publish_html_text_{publish_session_id}",
     )
 
     iframe_id_preview = iframe_id_for(brand, page_name or "page-name")
@@ -1279,6 +1290,7 @@ with publish_tab:
             "Preview HTML",
             use_container_width=True,
             disabled=not bool(html_text.strip()),
+            key=f"preview_html_{publish_session_id}",
         )
 
     with publish_col:
@@ -1287,6 +1299,7 @@ with publish_tab:
             type="primary",
             use_container_width=True,
             disabled=not bool(page_name.strip() and html_text.strip()),
+            key=f"publish_to_github_{publish_session_id}",
         )
 
     if preview_clicked:

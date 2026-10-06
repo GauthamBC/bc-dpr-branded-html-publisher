@@ -1204,6 +1204,24 @@ with publish_tab:
         f"Iframe title: {iframe_title_preview}"
     )
 
+    iframe_height = st.number_input(
+        "Iframe height (px)",
+        min_value=500,
+        max_value=50000,
+        value=IFRAME_HEIGHT,
+        step=500,
+        key="iframe_height",
+        help=(
+            "Use the + / − controls to change the height by 500px, "
+            "or click the value and type a height manually. "
+            "The chosen value is applied to all three iframe height positions."
+        ),
+    )
+    st.caption(
+        'This updates `height: …px`, `min-height: …px`, '
+        'and the HTML `height="…"` value together.'
+    )
+
     preview_repo = repo_name_for(
         BRANDS[brand],
         page_name or "page-name",
@@ -1332,6 +1350,7 @@ with publish_tab:
                 brand=brand,
                 page_name=page_name,
                 html_text=html_text,
+                height=int(iframe_height),
             )
 
             st.markdown("#### Ready-to-paste iframe")

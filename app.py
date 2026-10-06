@@ -145,6 +145,22 @@ st.markdown(
           0 0 0 3px rgba(0, 182, 122, .18),
           0 4px 14px rgba(0, 182, 122, .22) !important;
       }
+
+
+      /* Keep Streamlit dialogs vertically centered in the browser viewport. */
+      [data-testid="stDialog"] {
+        align-items: center !important;
+        justify-content: center !important;
+        padding-top: 24px !important;
+        padding-bottom: 24px !important;
+      }
+
+      [data-testid="stDialog"] [role="dialog"] {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        max-height: calc(100vh - 48px) !important;
+        overflow-y: auto !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,

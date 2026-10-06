@@ -4,7 +4,7 @@ import re
 import time
 import unicodedata
 from datetime import datetime
-from html import escape
+from html import escape, unescape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -55,6 +55,18 @@ BRANDS = {
     "USBets": "usbets",
     "SportsHandle": "sportshandle",
 }
+
+
+IFRAME_BRAND_PREFIXES = {
+    "Action Network": "actionnetwork",
+    "Canada Sports Betting": "canadasportsbetting",
+    "VegasInsider": "vegasinsider",
+    "RotoGrinders": "rotogrinders",
+    "USBets": "usbets",
+    "SportsHandle": "sportshandle",
+}
+
+IFRAME_HEIGHT = 20000
 
 
 # ============================================================
@@ -167,6 +179,64 @@ def slugify(value: str) -> str:
     value = re.sub(r"[^a-z0-9]+", "-", value)
     value = re.sub(r"-{2,}", "-", value).strip("-")
     return value or "page"
+
+
+
+def html_title_from_document(html_text: str) -> str:
+    """Return the document <title>, or an empty string if one is not present."""
+    match = re.search(
+        r"<title\b[^>]*>(.*?)</title>",
+        html_text or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    if not match:
+        return ""
+
+    value = re.sub(r"<[^>]+>", "", match.group(1))
+    value = re.sub(r"\s+", " ", value).strip()
+    return unescape(value)
+
+
+def iframe_id_for(brand: str, page_name: str) -> str:
+    """Create the CMS iframe ID from the selected brand + user-entered page name."""
+    prefix = IFRAME_BRAND_PREFIXES.get(
+        brand,
+        slugify(brand).replace("-", ""),
+    )
+    return f"{prefix}-{slugify(page_name)}"
+
+
+def build_iframe_code(
+    live_url: str,
+    brand: str,
+    page_name: str,
+    html_text: str,
+    height: int = IFRAME_HEIGHT,
+) -> str:
+    """
+    Build the exact one-line iframe structure that works in the CMS.
+    ID comes from Brand + Page name.
+    Title comes from the HTML <title>, falling back to Page name.
+    """
+    iframe_id = iframe_id_for(brand, page_name)
+    iframe_title = html_title_from_document(html_text) or page_name
+
+    safe_id = escape(iframe_id, quote=True)
+    safe_title = escape(iframe_title, quote=True)
+    safe_url = escape(live_url, quote=True)
+
+    return (
+        f'<iframe id="{safe_id}" '
+        f'style="display: block !important; width: 100% !important; '
+        f'height: {height}px !important; min-height: {height}px !important; '
+        f'max-height: none !important; aspect-ratio: auto !important; '
+        f'border: 0 !important; overflow: hidden !important;" '
+        f'title="{safe_title}" src="{safe_url}" height="{height}" '
+        'scrolling="yes" '
+        'sandbox="allow-scripts allow-same-origin allow-downloads '
+        'allow-popups allow-popups-to-escape-sandbox"></iframe>'
+    )
 
 
 def repo_name_for(brand_slug: str, page_name: str, when=None) -> str:
@@ -1122,6 +1192,18 @@ with publish_tab:
         placeholder="<!DOCTYPE html>\n<html>\n...\n</html>",
     )
 
+    iframe_id_preview = iframe_id_for(brand, page_name or "page-name")
+    iframe_title_preview = (
+        html_title_from_document(html_text)
+        or page_name
+        or "Page title"
+    )
+
+    st.caption(
+        f"Iframe ID: `{iframe_id_preview}` · "
+        f"Iframe title: {iframe_title_preview}"
+    )
+
     preview_repo = repo_name_for(
         BRANDS[brand],
         page_name or "page-name",
@@ -1245,11 +1327,11 @@ with publish_tab:
                 use_container_width=True,
             )
 
-            iframe_code = (
-                f'<iframe src="{pages_url}" '
-                'style="display:block;width:100%;height:9000px;'
-                'border:0;overflow:hidden;" '
-                f'title="{escape(page_name, quote=True)}"></iframe>'
+            iframe_code = build_iframe_code(
+                live_url=pages_url,
+                brand=brand,
+                page_name=page_name,
+                html_text=html_text,
             )
 
             st.markdown("#### Ready-to-paste iframe")

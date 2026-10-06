@@ -1409,6 +1409,7 @@ with publish_tab:
         iframe_code_col, iframe_height_col = st.columns([4.2, 1.15])
 
         with iframe_height_col:
+            st.markdown("#### Iframe height (px)")
             iframe_height = st.number_input(
                 "Iframe height (px)",
                 min_value=500,
@@ -1416,6 +1417,7 @@ with publish_tab:
                 value=IFRAME_HEIGHT,
                 step=500,
                 key=f"iframe_height_{last_publish['repo_name']}",
+                label_visibility="collapsed",
                 help=(
                     "Use + / - to change by 500px, or type a value manually. "
                     "This only changes the generated iframe code; it does not "

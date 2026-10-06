@@ -211,8 +211,9 @@ def build_iframe_code(
     live_url: str,
     brand: str,
     page_name: str,
-    html_text: str,
+    html_text: str = "",
     height: int = IFRAME_HEIGHT,
+    iframe_title: str = "",
 ) -> str:
     """
     Build the exact one-line iframe structure that works in the CMS.
@@ -220,7 +221,7 @@ def build_iframe_code(
     Title comes from the HTML <title>, falling back to Page name.
     """
     iframe_id = iframe_id_for(brand, page_name)
-    iframe_title = html_title_from_document(html_text) or page_name
+    iframe_title = iframe_title or html_title_from_document(html_text) or page_name
 
     safe_id = escape(iframe_id, quote=True)
     safe_title = escape(iframe_title, quote=True)
@@ -1104,6 +1105,22 @@ def render_quick_guide():
         st.rerun()
 
 
+def start_new_publish_session():
+    """
+    Clear the current publishing session while keeping the user signed in.
+    This resets brand/page/HTML inputs, upload state, the latest publish result,
+    iframe-height controls, and any open manage-page action.
+    """
+    keep = {
+        "authenticated_email",
+        "authenticated_name",
+    }
+
+    for key in list(st.session_state.keys()):
+        if key not in keep:
+            st.session_state.pop(key, None)
+
+
 # ============================================================
 # HEADER
 # ============================================================
@@ -1148,12 +1165,16 @@ with st.sidebar:
 
     if st.button("Sign out", use_container_width=True):
         for key in list(st.session_state.keys()):
-            if key.startswith("_gh_") or key in {
-                "authenticated_email",
-                "authenticated_name",
-                "repo_cache",
-            }:
-                st.session_state.pop(key, None)
+            st.session_state.pop(key, None)
+        st.rerun()
+
+    if st.button(
+        "New session",
+        use_container_width=True,
+        key="start_new_session",
+        help="Clear the current page inputs and start a fresh publish while staying signed in.",
+    ):
+        start_new_publish_session()
         st.rerun()
 
 
@@ -1168,17 +1189,23 @@ with publish_tab:
     col1, col2 = st.columns(2)
 
     with col1:
-        brand = st.selectbox("Brand", list(BRANDS.keys()))
+        brand = st.selectbox(
+            "Brand",
+            list(BRANDS.keys()),
+            key="publish_brand",
+        )
 
     with col2:
         page_name = st.text_input(
             "Page name",
             placeholder="e.g. NFL Stadium Family Costs",
+            key="publish_page_name",
         )
 
     uploaded = st.file_uploader(
         "Optional HTML upload",
         type=["html", "htm"],
+        key="publish_html_upload",
     )
 
     uploaded_html = ""
@@ -1190,6 +1217,7 @@ with publish_tab:
         value=uploaded_html,
         height=450,
         placeholder="<!DOCTYPE html>\n<html>\n...\n</html>",
+        key="publish_html_text",
     )
 
     iframe_id_preview = iframe_id_for(brand, page_name or "page-name")
@@ -1202,24 +1230,6 @@ with publish_tab:
     st.caption(
         f"Iframe ID: `{iframe_id_preview}` · "
         f"Iframe title: {iframe_title_preview}"
-    )
-
-    iframe_height = st.number_input(
-        "Iframe height (px)",
-        min_value=500,
-        max_value=50000,
-        value=IFRAME_HEIGHT,
-        step=500,
-        key="iframe_height",
-        help=(
-            "Use the + / − controls to change the height by 500px, "
-            "or click the value and type a height manually. "
-            "The chosen value is applied to all three iframe height positions."
-        ),
-    )
-    st.caption(
-        'This updates `height: …px`, `min-height: …px`, '
-        'and the HTML `height="…"` value together.'
     )
 
     preview_repo = repo_name_for(
@@ -1269,6 +1279,7 @@ with publish_tab:
 
     if publish_clicked:
         created_repo_url = None
+        st.session_state.pop("last_publish", None)
 
         try:
             with st.status("Publishing…", expanded=True) as status:
@@ -1323,38 +1334,17 @@ with publish_tab:
                     expanded=False,
                 )
 
-            st.success("Repository created and GitHub Pages enabled.")
-
-            st.markdown("#### Live URL")
-            st.code(pages_url, language=None)
-            st.link_button(
-                "Open live page",
-                pages_url,
-                use_container_width=True,
-            )
-            st.caption(
-                "GitHub Pages may take a minute to go live. "
-                "If it isn’t ready yet, check the link again shortly."
-            )
-
-            st.markdown("#### Repository")
-            st.code(created_repo_url, language=None)
-            st.link_button(
-                "Open GitHub repository",
-                created_repo_url,
-                use_container_width=True,
-            )
-
-            iframe_code = build_iframe_code(
-                live_url=pages_url,
-                brand=brand,
-                page_name=page_name,
-                html_text=html_text,
-                height=int(iframe_height),
-            )
-
-            st.markdown("#### Ready-to-paste iframe")
-            st.code(iframe_code, language="html")
+            st.session_state["last_publish"] = {
+                "repo_name": repo_name,
+                "pages_url": pages_url,
+                "repo_url": created_repo_url,
+                "brand": brand,
+                "page_name": page_name,
+                "iframe_title": (
+                    html_title_from_document(html_text)
+                    or page_name
+                ),
+            }
 
             st.session_state.pop("repo_cache", None)
 
@@ -1370,6 +1360,285 @@ with publish_tab:
                     created_repo_url,
                     use_container_width=True,
                 )
+
+
+    # ------------------------------------------------------------
+    # Latest published page + adjustable iframe
+    # ------------------------------------------------------------
+    last_publish = st.session_state.get("last_publish")
+
+    if last_publish:
+        st.success("Repository created and GitHub Pages enabled.")
+
+        st.markdown("#### Live URL")
+        st.code(last_publish["pages_url"], language=None)
+        st.link_button(
+            "Open live page",
+            last_publish["pages_url"],
+            use_container_width=True,
+        )
+        st.caption(
+            "GitHub Pages may take a minute to go live. "
+            "If it isn’t ready yet, check the link again shortly."
+        )
+
+        st.markdown("#### Repository")
+        st.code(last_publish["repo_url"], language=None)
+        st.link_button(
+            "Open GitHub repository",
+            last_publish["repo_url"],
+            use_container_width=True,
+        )
+
+        iframe_code_col, iframe_height_col = st.columns([4.2, 1.15])
+
+        with iframe_height_col:
+            iframe_height = st.number_input(
+                "Iframe height (px)",
+                min_value=500,
+                max_value=50000,
+                value=IFRAME_HEIGHT,
+                step=500,
+                key=f"iframe_height_{last_publish['repo_name']}",
+                help=(
+                    "Use + / - to change by 500px, or type a value manually. "
+                    "This only changes the generated iframe code; it does not "
+                    "republish or modify the live GitHub page."
+                ),
+            )
+
+        iframe_code = build_iframe_code(
+            live_url=last_publish["pages_url"],
+            brand=last_publish["brand"],
+            page_name=last_publish["page_name"],
+            height=int(iframe_height),
+            iframe_title=last_publish["iframe_title"],
+        )
+
+        with iframe_code_col:
+            st.markdown("#### Ready-to-paste iframe")
+            st.code(iframe_code, language="html")
+
+        st.caption(
+            'Changing the height updates all three iframe values together: '
+            '`height: …px`, `min-height: …px`, and `height="…"`.'
+        )
+
+
+
+# ============================================================
+# MANAGE PAGE DIALOG
+# ============================================================
+
+def clear_manage_action():
+    st.session_state.pop("pending_manage_action", None)
+    st.session_state.pop("pending_manage_repo", None)
+    st.session_state.pop("manage_reauthed", None)
+    st.session_state.pop("manage_action_open", None)
+
+
+@st.dialog("Manage page", width="large")
+def render_manage_action_dialog(action, selected_record, token):
+    selected_repo_name = selected_record["repo_name"]
+
+    creator_email = (
+        selected_record.get("creator_email") or ""
+    ).strip().lower()
+
+    # Older publisher-created repos may not include creator email.
+    # Resolve it by unique first-name match when possible.
+    if not creator_email:
+        matching_emails = [
+            email
+            for email, user_data in USERS.items()
+            if str(user_data["name"]).strip().lower()
+            == str(selected_record["creator_name"]).strip().lower()
+        ]
+        if len(matching_emails) == 1:
+            creator_email = matching_emails[0]
+
+    is_owner = (
+        bool(creator_email)
+        and AUTHENTICATED_EMAIL == creator_email
+    )
+
+    action_labels = {
+        "repo": "Open Repository",
+        "replace": "Replace HTML",
+        "delete": "Delete Page",
+    }
+
+    st.markdown(
+        f"### {action_labels.get(action, 'Manage Page')} · "
+        f"{selected_record['page']}"
+    )
+    st.caption(
+        f"{selected_record['brand']} · "
+        f"{selected_record['creator_name']} · "
+        f"{selected_record['published']}"
+    )
+
+    if not is_owner:
+        creator_name = (
+            selected_record["creator_name"]
+            or "the original creator"
+        )
+
+        st.info(
+            f"Created by {creator_name}. "
+            f"Sign in as {creator_name} to access the repo or make changes."
+        )
+
+        if st.button(
+            "Close",
+            use_container_width=True,
+            key=f"close_not_owner_{selected_repo_name}_{action}",
+        ):
+            clear_manage_action()
+            st.rerun()
+
+        return
+
+    # Require fresh creator passcode for every action click.
+    if not st.session_state.get("manage_reauthed"):
+        with st.form(
+            f"manage_reauth_{selected_repo_name}_{action}",
+            clear_on_submit=True,
+        ):
+            passcode = st.text_input(
+                "Re-enter your passcode",
+                type="password",
+            )
+
+            confirm = st.form_submit_button(
+                "Continue",
+                type="primary",
+                use_container_width=True,
+            )
+
+        if confirm:
+            expected = str(
+                USERS[AUTHENTICATED_EMAIL]["passcode"]
+            )
+
+            if (
+                passcode
+                and hmac.compare_digest(
+                    str(passcode),
+                    expected,
+                )
+            ):
+                st.session_state["manage_reauthed"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect passcode.")
+
+        if st.button(
+            "Cancel",
+            use_container_width=True,
+            key=f"cancel_reauth_{selected_repo_name}_{action}",
+        ):
+            clear_manage_action()
+            st.rerun()
+
+        return
+
+    selected = selected_record["repo"]
+
+    if action == "repo":
+        st.success("Identity confirmed.")
+        st.link_button(
+            "Open GitHub repository",
+            selected_record["repo_url"],
+            use_container_width=True,
+        )
+        st.caption(
+            "The repository contains the published index.html."
+        )
+
+        if st.button(
+            "Done",
+            use_container_width=True,
+            key=f"done_repo_action_{selected_repo_name}",
+        ):
+            clear_manage_action()
+            st.rerun()
+
+    elif action == "replace":
+        replacement_html = st.text_area(
+            "New HTML",
+            height=300,
+            placeholder="Paste the complete replacement HTML here.",
+            key=f"replacement_{selected_repo_name}",
+        )
+
+        update_col, cancel_col = st.columns(2)
+
+        with update_col:
+            if st.button(
+                "Update page",
+                type="primary",
+                use_container_width=True,
+                disabled=not bool(replacement_html.strip()),
+                key=f"confirm_replace_action_{selected_repo_name}",
+            ):
+                branch = (
+                    selected.get("default_branch")
+                    or "main"
+                )
+
+                update_file(
+                    token,
+                    selected_repo_name,
+                    branch,
+                    "index.html",
+                    replacement_html.encode("utf-8"),
+                    f"Update HTML by {AUTHENTICATED_NAME}",
+                )
+
+                clear_manage_action()
+                st.session_state.pop(
+                    f"replacement_{selected_repo_name}",
+                    None,
+                )
+                st.rerun()
+
+        with cancel_col:
+            if st.button(
+                "Cancel",
+                use_container_width=True,
+                key=f"cancel_replace_action_{selected_repo_name}",
+            ):
+                clear_manage_action()
+                st.rerun()
+
+    elif action == "delete":
+        st.warning(
+            "This permanently deletes the repository and live page."
+        )
+
+        delete_col, cancel_col = st.columns(2)
+
+        with delete_col:
+            if st.button(
+                "Delete permanently",
+                type="primary",
+                use_container_width=True,
+                key=f"confirm_delete_action_{selected_repo_name}",
+            ):
+                delete_repo(token, selected_repo_name)
+                clear_manage_action()
+                st.session_state.pop("repo_cache", None)
+                st.rerun()
+
+        with cancel_col:
+            if st.button(
+                "Cancel",
+                use_container_width=True,
+                key=f"cancel_delete_action_{selected_repo_name}",
+            ):
+                clear_manage_action()
+                st.rerun()
 
 
 # ============================================================
@@ -1519,7 +1788,7 @@ with manage_tab:
                 )
 
             # ------------------------------------------------------------
-            # Creator-only action panel
+            # Creator-only actions open in a centered modal dialog
             # ------------------------------------------------------------
 
             action = st.session_state.get("pending_manage_action")
@@ -1539,207 +1808,11 @@ with manage_tab:
                 and action in {"repo", "replace", "delete"}
                 and selected_record
             ):
-                creator_email = (
-                    selected_record.get("creator_email") or ""
-                ).strip().lower()
-
-                # Older publisher-created repos may not include creator email.
-                # Resolve it by unique first-name match when possible.
-                if not creator_email:
-                    matching_emails = [
-                        email
-                        for email, user_data in USERS.items()
-                        if str(user_data["name"]).strip().lower()
-                        == str(selected_record["creator_name"]).strip().lower()
-                    ]
-                    if len(matching_emails) == 1:
-                        creator_email = matching_emails[0]
-
-                is_owner = (
-                    bool(creator_email)
-                    and AUTHENTICATED_EMAIL == creator_email
+                render_manage_action_dialog(
+                    action,
+                    selected_record,
+                    token,
                 )
-
-                st.divider()
-
-                if not is_owner:
-                    creator_name = selected_record["creator_name"] or "the original creator"
-
-                    st.info(
-                        f"Created by {creator_name}. "
-                        f"Sign in as {creator_name} to access the repo or make changes."
-                    )
-
-                    if st.button(
-                        "Close",
-                        use_container_width=True,
-                        key="close_not_owner",
-                    ):
-                        st.session_state.pop("pending_manage_action", None)
-                        st.session_state.pop("pending_manage_repo", None)
-                        st.session_state.pop("manage_reauthed", None)
-                        st.session_state.pop("manage_action_open", None)
-                        st.rerun()
-
-                else:
-                    action_labels = {
-                        "repo": "Open Repository",
-                        "replace": "Replace HTML",
-                        "delete": "Delete Page",
-                    }
-
-                    st.markdown(
-                        f"#### {action_labels[action]} · {selected_record['page']}"
-                    )
-                    st.caption(
-                        f"{selected_record['brand']} · "
-                        f"{selected_record['creator_name']} · "
-                        f"{selected_record['published']}"
-                    )
-
-                    # Require fresh creator passcode for every action click.
-                    if not st.session_state.get("manage_reauthed"):
-                        with st.form(
-                            f"manage_reauth_{selected_repo_name}_{action}",
-                            clear_on_submit=True,
-                        ):
-                            passcode = st.text_input(
-                                "Re-enter your passcode",
-                                type="password",
-                            )
-
-                            confirm = st.form_submit_button(
-                                "Continue",
-                                type="primary",
-                                use_container_width=True,
-                            )
-
-                        if confirm:
-                            expected = str(
-                                USERS[AUTHENTICATED_EMAIL]["passcode"]
-                            )
-
-                            if (
-                                passcode
-                                and hmac.compare_digest(
-                                    str(passcode),
-                                    expected,
-                                )
-                            ):
-                                st.session_state["manage_reauthed"] = True
-                                st.rerun()
-                            else:
-                                st.error("Incorrect passcode.")
-
-                    else:
-                        selected = selected_record["repo"]
-
-                        if action == "repo":
-                            st.success("Identity confirmed.")
-                            st.link_button(
-                                "Open GitHub repository",
-                                selected_record["repo_url"],
-                                use_container_width=True,
-                            )
-                            st.caption(
-                                "The repository contains the published index.html."
-                            )
-
-                            if st.button(
-                                "Done",
-                                use_container_width=True,
-                                key="done_repo_action",
-                            ):
-                                st.session_state.pop("pending_manage_action", None)
-                                st.session_state.pop("pending_manage_repo", None)
-                                st.session_state.pop("manage_reauthed", None)
-                                st.session_state.pop("manage_action_open", None)
-                                st.rerun()
-
-                        elif action == "replace":
-                            replacement_html = st.text_area(
-                                "New HTML",
-                                height=300,
-                                placeholder="Paste the complete replacement HTML here.",
-                                key=f"replacement_{selected_repo_name}",
-                            )
-
-                            update_col, cancel_col = st.columns(2)
-
-                            with update_col:
-                                if st.button(
-                                    "Update page",
-                                    type="primary",
-                                    use_container_width=True,
-                                    disabled=not bool(replacement_html.strip()),
-                                    key="confirm_replace_action",
-                                ):
-                                    branch = (
-                                        selected.get("default_branch")
-                                        or "main"
-                                    )
-
-                                    update_file(
-                                        token,
-                                        selected_repo_name,
-                                        branch,
-                                        "index.html",
-                                        replacement_html.encode("utf-8"),
-                                        f"Update HTML by {AUTHENTICATED_NAME}",
-                                    )
-
-                                    st.session_state.pop("pending_manage_action", None)
-                                    st.session_state.pop("pending_manage_repo", None)
-                                    st.session_state.pop("manage_reauthed", None)
-                                    st.session_state.pop("manage_action_open", None)
-                                    st.success("Page updated.")
-                                    st.rerun()
-
-                            with cancel_col:
-                                if st.button(
-                                    "Cancel",
-                                    use_container_width=True,
-                                    key="cancel_replace_action",
-                                ):
-                                    st.session_state.pop("pending_manage_action", None)
-                                    st.session_state.pop("pending_manage_repo", None)
-                                    st.session_state.pop("manage_reauthed", None)
-                                    st.rerun()
-
-                        elif action == "delete":
-                            st.warning(
-                                "This permanently deletes the repository and live page."
-                            )
-
-                            delete_col, cancel_col = st.columns(2)
-
-                            with delete_col:
-                                if st.button(
-                                    "Delete permanently",
-                                    type="primary",
-                                    use_container_width=True,
-                                    key="confirm_delete_action",
-                                ):
-                                    delete_repo(token, selected_repo_name)
-
-                                    st.session_state.pop("pending_manage_action", None)
-                                    st.session_state.pop("pending_manage_repo", None)
-                                    st.session_state.pop("manage_reauthed", None)
-                                    st.session_state.pop("manage_action_open", None)
-
-                                    st.success("Page deleted.")
-                                    st.rerun()
-
-                            with cancel_col:
-                                if st.button(
-                                    "Cancel",
-                                    use_container_width=True,
-                                    key="cancel_delete_action",
-                                ):
-                                    st.session_state.pop("pending_manage_action", None)
-                                    st.session_state.pop("pending_manage_repo", None)
-                                    st.session_state.pop("manage_reauthed", None)
-                                    st.rerun()
 
     except Exception as exc:
         st.error(str(exc))
